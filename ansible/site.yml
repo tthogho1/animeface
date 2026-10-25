@@ -1,0 +1,28 @@
+- name: Prepare all nodes
+  hosts: k3s_cluster
+  become: true
+  roles:
+    - common
+
+- name: Install k3s control plane
+  hosts: k3s_server
+  become: true
+  roles:
+    - k3s_server
+
+- name: Join GPU workers
+  hosts: gpu
+  become: true
+  roles:
+    - k3s_agent
+
+- name: Install cluster add-ons and deploy AnimeFace
+  hosts: k3s_server
+  become: true
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  roles:
+    - cluster_addons
+    - ecr_auth
+    - role: animeface
+      tags: [app]

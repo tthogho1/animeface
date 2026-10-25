@@ -1,0 +1,21 @@
+- name: Wait for cloud-init to finish
+  ansible.builtin.command: cloud-init status --wait
+  changed_when: false
+  failed_when: false
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: [curl, unzip, jq, nfs-common, ca-certificates]
+    update_cache: true
+    cache_valid_time: 3600
+    lock_timeout: 600
+
+- name: Disable swap (kubelet requirement)
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+
+- name: Create k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"

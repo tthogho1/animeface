@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh AnimeFace ECR pull secret every 6 hours
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

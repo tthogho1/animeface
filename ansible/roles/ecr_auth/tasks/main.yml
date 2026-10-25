@@ -1,0 +1,63 @@
+# ECR tokens expire after 12h, so a systemd timer on the server refreshes the
+# image pull secret using the instance profile credentials.
+- name: Check for AWS CLI
+  ansible.builtin.stat:
+    path: /usr/local/bin/aws
+  register: aws_cli
+
+- name: Install AWS CLI v2
+  when: not aws_cli.stat.exists
+  block:
+    - name: Download AWS CLI v2
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+        mode: "0644"
+
+    - name: Unpack AWS CLI v2
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+
+    - name: Run AWS CLI installer
+      ansible.builtin.command: /tmp/aws/install
+      args:
+        creates: /usr/local/bin/aws
+
+- name: Create application namespace
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl create namespace {{ animeface_namespace }} --dry-run=client -o yaml | k3s kubectl apply -f -
+  args:
+    executable: /bin/bash
+  register: ns
+  changed_when: "'created' in ns.stdout"
+
+- name: Install ECR secret refresh script
+  ansible.builtin.template:
+    src: ecr-refresh.sh.j2
+    dest: /usr/local/bin/animeface-ecr-refresh
+    mode: "0750"
+
+- name: Install ECR refresh systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - animeface-ecr-refresh.service
+    - animeface-ecr-refresh.timer
+
+- name: Enable ECR refresh timer
+  ansible.builtin.systemd:
+    name: animeface-ecr-refresh.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Refresh ECR pull secret now
+  ansible.builtin.systemd:
+    name: animeface-ecr-refresh.service
+    state: started
+  changed_when: false

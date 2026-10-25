@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-download
+  namespace: {{ animeface_namespace }}
+data:
+  models.txt: |
+{% for m in models %}
+    {{ m.url }} {{ m.dest }}
+{% endfor %}
+  download.sh: |
+    #!/bin/sh
+    set -eu
+    cd /models
+    mkdir -p checkpoints controlnet instantid upscale_models insightface/models/antelopev2
+    while read -r url dest; do
+      [ -z "$url" ] && continue
+      if [ -s "$dest" ]; then
+        echo "skip     $dest"
+        continue
+      fi
+      mkdir -p "$(dirname "$dest")"
+      echo "download $url -> $dest"
+      if [ -n "${HF_TOKEN:-}" ] && echo "$url" | grep -q '^https://huggingface.co/'; then
+        curl -fL --retry 5 --retry-delay 10 -H "Authorization: Bearer $HF_TOKEN" -o "$dest.part" "$url"
+      else
+        curl -fL --retry 5 --retry-delay 10 -o "$dest.part" "$url"
+      fi
+      mv "$dest.part" "$dest"
+    done < /config/models.txt
+    echo "all models present"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-download
+  namespace: {{ animeface_namespace }}
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: download
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "/config/download.sh"]
+          securityContext:
+            runAsUser: 0
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+                  optional: true
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: anime-models-efs
+        - name: config
+          configMap:
+            name: model-download

@@ -1,0 +1,31 @@
+# Static EFS volumes, one access point each (created by Terraform).
+{% for name, ap in [('models', efs_ap_models), ('outputs', efs_ap_outputs)] %}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: anime-{{ name }}-efs
+spec:
+  capacity:
+    storage: 500Gi
+  volumeMode: Filesystem
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: "{{ efs_id }}::{{ ap }}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: anime-{{ name }}-efs
+  namespace: {{ animeface_namespace }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: anime-{{ name }}-efs
+  resources:
+    requests:
+      storage: 500Gi
+{% endfor %}

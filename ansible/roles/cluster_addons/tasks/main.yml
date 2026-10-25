@@ -1,0 +1,44 @@
+- name: Install Helm
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION={{ helm_version }} bash
+  args:
+    executable: /bin/bash
+    creates: /usr/local/bin/helm
+
+- name: Add Helm repositories
+  ansible.builtin.shell: |
+    helm repo add nvdp https://nvidia.github.io/k8s-device-plugin --force-update
+    helm repo add aws-efs-csi-driver https://kubernetes-sigs.github.io/aws-efs-csi-driver --force-update
+    helm repo update
+  changed_when: false
+
+# k3s creates the "nvidia" RuntimeClass when it detects nvidia-container-runtime.
+- name: Install NVIDIA device plugin
+  ansible.builtin.command: >-
+    helm upgrade --install nvdp nvdp/nvidia-device-plugin
+    --namespace nvidia-device-plugin --create-namespace
+    {{ '--version ' + nvidia_device_plugin_chart_version if nvidia_device_plugin_chart_version else '' }}
+    --set runtimeClassName=nvidia
+    --set-string nodeSelector.nvidia\.com/gpu\.present=true
+    --wait
+  changed_when: true
+
+- name: Install AWS EFS CSI driver
+  ansible.builtin.command: >-
+    helm upgrade --install aws-efs-csi-driver aws-efs-csi-driver/aws-efs-csi-driver
+    --namespace kube-system
+    {{ '--version ' + efs_csi_chart_version if efs_csi_chart_version else '' }}
+    --wait
+  changed_when: true
+
+- name: Wait until GPU nodes advertise nvidia.com/gpu
+  ansible.builtin.command: >-
+    k3s kubectl get nodes -l nvidia.com/gpu.present=true
+    -o jsonpath={.items[*].status.allocatable.nvidia\.com/gpu}
+  register: gpu_alloc
+  until: gpu_alloc.stdout | length > 0 and '0' != gpu_alloc.stdout
+  retries: 30
+  delay: 10
+  changed_when: false
+  when: groups['gpu'] | default([]) | length > 0

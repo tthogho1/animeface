@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh AnimeFace ECR pull secret
+After=k3s.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/animeface-ecr-refresh

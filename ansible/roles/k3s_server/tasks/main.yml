@@ -1,0 +1,50 @@
+- name: Write k3s server config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0600"
+  notify: Restart k3s
+
+- name: Install k3s server
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} sh -s - server
+  args:
+    executable: /bin/bash
+    creates: /usr/local/bin/k3s
+
+- name: Wait for the Kubernetes API
+  ansible.builtin.wait_for:
+    port: 6443
+    timeout: 300
+
+- name: Wait for the control-plane node to be Ready
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=10s
+  register: node_ready
+  until: node_ready.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Read node join token
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: node_token
+
+- name: Expose join token to agents
+  ansible.builtin.set_fact:
+    k3s_token: "{{ node_token.content | b64decode | trim }}"
+
+- name: Fetch kubeconfig to the repository root
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ playbook_dir }}/../kubeconfig"
+    flat: true
+
+- name: Point local kubeconfig at the server public IP
+  delegate_to: localhost
+  become: false
+  ansible.builtin.replace:
+    path: "{{ playbook_dir }}/../kubeconfig"
+    regexp: 'https://127\.0\.0\.1:6443'
+    replace: "https://{{ ansible_host }}:6443"

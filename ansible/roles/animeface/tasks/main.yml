@@ -1,0 +1,72 @@
+- name: Require an image tag
+  ansible.builtin.assert:
+    that: image_tag | length > 0
+    fail_msg: "image_tag is empty. Run `make images` first, then `make cluster` (or pass -e image_tag=...)."
+
+- name: Create manifest directory
+  ansible.builtin.file:
+    path: /opt/animeface
+    state: directory
+    mode: "0750"
+
+- name: Render manifests
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/opt/animeface/{{ item }}"
+    mode: "0640"
+  loop:
+    - storage.yaml
+    - model-download.yaml
+    - comfyui.yaml
+    - app.yaml
+
+- name: Store Hugging Face token
+  when: hf_token | length > 0
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl -n {{ animeface_namespace }} create secret generic hf-token \
+      --from-literal=token="$HF_TOKEN" --dry-run=client -o yaml | k3s kubectl apply -f -
+  args:
+    executable: /bin/bash
+  environment:
+    HF_TOKEN: "{{ hf_token }}"
+  no_log: true
+  changed_when: false
+
+- name: Apply EFS volumes
+  ansible.builtin.command: k3s kubectl apply -f /opt/animeface/storage.yaml
+  register: storage
+  changed_when: "'created' in storage.stdout or 'configured' in storage.stdout"
+
+# Jobs are immutable; recreate it each run. Already-present files are skipped.
+- name: Remove previous model download job
+  ansible.builtin.command: k3s kubectl -n {{ animeface_namespace }} delete job model-download --ignore-not-found --wait
+  changed_when: false
+
+- name: Start model download job
+  ansible.builtin.command: k3s kubectl apply -f /opt/animeface/model-download.yaml
+  changed_when: true
+
+- name: Wait for model download (first run pulls ~10GB)
+  ansible.builtin.command: >-
+    k3s kubectl -n {{ animeface_namespace }} wait --for=condition=complete
+    job/model-download --timeout=7200s
+  changed_when: false
+
+- name: Deploy ComfyUI and the web app
+  ansible.builtin.command: "k3s kubectl apply -f /opt/animeface/{{ item }}"
+  loop: [comfyui.yaml, app.yaml]
+  register: deploy
+  changed_when: "'created' in deploy.stdout or 'configured' in deploy.stdout"
+
+- name: Wait for ComfyUI rollout (first pull of the CUDA image is slow)
+  ansible.builtin.command: k3s kubectl -n {{ animeface_namespace }} rollout status deploy/comfyui --timeout=1800s
+  changed_when: false
+
+- name: Wait for web app rollout
+  ansible.builtin.command: k3s kubectl -n {{ animeface_namespace }} rollout status deploy/animeface-app --timeout=600s
+  changed_when: false
+
+- name: Show app URL
+  ansible.builtin.debug:
+    msg: "AnimeFace is up at http://{{ ansible_host }}/"

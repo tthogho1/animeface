@@ -1,0 +1,42 @@
+# Cluster
+k3s_version: v1.31.4+k3s1
+helm_version: v3.16.3
+nvidia_device_plugin_chart_version: "0.17.0"
+efs_csi_chart_version: ""   # empty = latest chart
+kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+
+# Application
+animeface_namespace: animeface
+# Set by `make cluster` from .image-tag (written by `make images`).
+image_tag: ""
+# Optional Hugging Face token for gated/rate-limited downloads: export HF_TOKEN=...
+hf_token: "{{ lookup('env', 'HF_TOKEN') }}"
+
+# Model files downloaded onto the models EFS volume (paths relative to ComfyUI/models).
+# Existing non-empty files are skipped, so re-running is cheap.
+checkpoint_file: animagine-xl-3.1.safetensors
+instantid_file: ip-adapter_instant_id_sdxl.bin
+controlnet_file: control_instant_id_sdxl.safetensors
+upscale_model_file: RealESRGAN_x4plus_anime_6B.pth
+upscale_model_scale: 4
+
+models:
+  - url: https://huggingface.co/cagliostrolab/animagine-xl-3.1/resolve/main/animagine-xl-3.1.safetensors
+    dest: "checkpoints/{{ checkpoint_file }}"
+  - url: https://huggingface.co/InstantX/InstantID/resolve/main/ip-adapter.bin
+    dest: "instantid/{{ instantid_file }}"
+  - url: https://huggingface.co/InstantX/InstantID/resolve/main/ControlNetModel/diffusion_pytorch_model.safetensors
+    dest: "controlnet/{{ controlnet_file }}"
+  - url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth
+    dest: "upscale_models/{{ upscale_model_file }}"
+  # antelopev2 has no official HF repo; this is a widely used community mirror.
+  - url: https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/1k3d68.onnx
+    dest: insightface/models/antelopev2/1k3d68.onnx
+  - url: https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/2d106det.onnx
+    dest: insightface/models/antelopev2/2d106det.onnx
+  - url: https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/genderage.onnx
+    dest: insightface/models/antelopev2/genderage.onnx
+  - url: https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/glintr100.onnx
+    dest: insightface/models/antelopev2/glintr100.onnx
+  - url: https://huggingface.co/DIAMONIK7777/antelopev2/resolve/main/scrfd_10g_bnkps.onnx
+    dest: insightface/models/antelopev2/scrfd_10g_bnkps.onnx

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comfyui
+  namespace: {{ animeface_namespace }}
+  labels:
+    app: comfyui
+spec:
+  replicas: 1
+  # One GPU per node: the old pod must release it before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: comfyui
+  template:
+    metadata:
+      labels:
+        app: comfyui
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      imagePullSecrets:
+        - name: ecr-cred
+      containers:
+        - name: comfyui
+          image: "{{ comfyui_image }}:{{ image_tag }}"
+          ports:
+            - name: http
+              containerPort: 8188
+          resources:
+            requests:
+              cpu: "2"
+              memory: 10Gi
+            limits:
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: models
+              mountPath: /workspace/ComfyUI/models
+            - name: outputs
+              mountPath: /workspace/ComfyUI/output
+            - name: dshm
+              mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /system_stats
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /system_stats
+              port: http
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /system_stats
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: anime-models-efs
+        - name: outputs
+          persistentVolumeClaim:
+            claimName: anime-outputs-efs
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---
+# Internal only. Reach the ComfyUI editor with `make comfyui-ui`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui
+  namespace: {{ animeface_namespace }}
+spec:
+  selector:
+    app: comfyui
+  ports:
+    - name: http
+      port: 8188
+      targetPort: http

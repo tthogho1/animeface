@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: animeface-app
+  namespace: {{ animeface_namespace }}
+data:
+  COMFYUI_URL: http://comfyui:8188
+  CHECKPOINT: "{{ checkpoint_file }}"
+  INSTANTID_MODEL: "{{ instantid_file }}"
+  CONTROLNET_MODEL: "{{ controlnet_file }}"
+  UPSCALE_MODEL: "{{ upscale_model_file }}"
+  UPSCALE_MODEL_SCALE: "{{ upscale_model_scale }}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: animeface-app
+  namespace: {{ animeface_namespace }}
+  labels:
+    app: animeface-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: animeface-app
+  template:
+    metadata:
+      labels:
+        app: animeface-app
+    spec:
+      imagePullSecrets:
+        - name: ecr-cred
+      containers:
+        - name: app
+          image: "{{ app_image }}:{{ image_tag }}"
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: animeface-app
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: animeface-app
+  namespace: {{ animeface_namespace }}
+spec:
+  selector:
+    app: animeface-app
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: animeface
+  namespace: {{ animeface_namespace }}
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: animeface-app
+                port:
+                  name: http

@@ -1,0 +1,7 @@
+server: https://{{ k3s_server_private_ip }}:6443
+token: {{ k3s_token }}
+node-ip: {{ private_ip }}
+node-external-ip: {{ ansible_host }}
+node-label:
+  - nvidia.com/gpu.present=true
+  - animeface/role=gpu

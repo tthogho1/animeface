@@ -1,0 +1,33 @@
+- name: Check the NVIDIA driver (preinstalled on the DLAMI)
+  ansible.builtin.command: nvidia-smi
+  changed_when: false
+
+- name: Check nvidia-container-runtime is installed
+  ansible.builtin.command: which nvidia-container-runtime
+  changed_when: false
+
+- name: Write k3s agent config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0600"
+  notify: Restart k3s-agent
+
+- name: Install k3s agent
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }} sh -s - agent
+  args:
+    executable: /bin/bash
+    creates: /usr/local/bin/k3s
+  environment:
+    K3S_URL: "https://{{ k3s_server_private_ip }}:6443"
+    K3S_TOKEN: "{{ k3s_token }}"
+
+- name: Verify k3s registered the nvidia containerd runtime
+  ansible.builtin.command: grep -rq nvidia /var/lib/rancher/k3s/agent/etc/containerd/
+  register: nvidia_runtime
+  until: nvidia_runtime.rc == 0
+  retries: 12
+  delay: 5
+  changed_when: false

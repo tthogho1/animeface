@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Managed by Ansible. Refreshes the ECR image pull secret used by AnimeFace pods.
+set -euo pipefail
+export KUBECONFIG={{ kubeconfig_path }}
+
+password="$(/usr/local/bin/aws ecr get-login-password --region {{ aws_region }})"
+/usr/local/bin/k3s kubectl -n {{ animeface_namespace }} create secret docker-registry ecr-cred \
+  --docker-server={{ ecr_registry }} \
+  --docker-username=AWS \
+  --docker-password="${password}" \
+  --dry-run=client -o yaml | /usr/local/bin/k3s kubectl apply -f -
